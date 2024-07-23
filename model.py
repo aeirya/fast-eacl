@@ -18,9 +18,13 @@ class TimeLSTM(nn.Module):
         b, seq, embed = inputs.size()
         h = torch.zeros(b, self.hidden_size, requires_grad=False)
         c = torch.zeros(b, self.hidden_size, requires_grad=False)
-        h = h.cuda()
-        c = c.cuda()
+        
+        if self.cuda_flag:
+            h = h.cuda()
+            c = c.cuda()
+
         outputs = []
+
         hidden_state_h = []
         hidden_state_c = []
         for s in range(seq):
@@ -60,7 +64,7 @@ class Attention(torch.nn.Module):
             self.arange = torch.arange(maxlen)
     def forward(self, full, last, lens=None, dim=1):
         if self.use_attention:
-            score = self.V(F.tanh(self.W1(last) + self.W2(full)))
+            score = self.V(torch.tanh(self.W1(last) + self.W2(full)))
             attention_weights = F.softmax(score, dim=dim)
             context_vector = attention_weights * full
             context_vector = torch.sum(context_vector, dim=dim)
@@ -100,7 +104,9 @@ class FAST(nn.Module):
             num_text = text_input.size(2)
             embb_dims = text_input.size(3)
             for j in range(len_lookback_window):
-                y, (temp,_) = self.time_lstm[i](text_input[i,j,:,:].reshape(1,num_text,embb_dims), time_inputs[i,j,:].reshape(1,num_text))
+                y, (temp,_) = self.time_lstm[i](
+                    text_input[i,j,:,:].reshape(1,num_text,embb_dims),
+                    time_inputs[i,j,:].reshape(1,num_text))
                 y = self.text_attention[i](y, temp, num_text)
                 list_2.append(y)
             text_vectors = torch.Tensor((1,len_lookback_window,op_size))

@@ -45,7 +45,15 @@ def evaluate(prediction, ground_truth, mask, report=False):
                 pre_top5.add(cur_rank)
             if len(pre_top10) < 10:
                 pre_top10.add(cur_rank)
-        performance['ndcg'] = ndcg_score(np.array(list(gt_top5)).reshape(1,-1), np.array(list(pre_top5)).reshape(1,-1))
+       
+        
+        # TODO: UNCOMMENT NDCG
+        # performance['ndcg'] = ndcg_score(
+        #     np.array(list(gt_top5)).reshape(1,-1), 
+        #     np.array(list(pre_top5)).reshape(1,-1)
+        #     )
+        
+       
         # performance['ndcg10'] = ndcg_score(np.array(list(gt_top10)).reshape(1,-1), np.array(list(pre_top10)).reshape(1,-1))
         top1_pos_in_gt = 0
         for j in range(1, prediction.shape[0] + 1):
@@ -85,7 +93,12 @@ def evaluate(prediction, ground_truth, mask, report=False):
             real_ret_rat_top10 += ground_truth[pre][i]
         real_ret_rat_top10 /= 10
         bt_long10 += real_ret_rat_top10
-    performance['mrr'] = mrr_top / (prediction.shape[1] - all_miss_days_top)
+
+    if prediction.shape[1] - all_miss_days_top == 0:
+        performance['mrr'] = np.nan
+    else:
+        performance['mrr'] = mrr_top / (prediction.shape[1] - all_miss_days_top)
+    
     # performance['irr'] = bt_long
     performance['irr'] = bt_long5
     # performance['irr10'] = bt_long10
