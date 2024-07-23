@@ -1,5 +1,8 @@
 from __future__ import division
 from __future__ import print_function
+
+BASE_DIR = '.'
+
 import os
 import copy
 import torch
@@ -15,6 +18,7 @@ from evaluator import evaluate
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.utils.tensorboard import SummaryWriter
+
 seed = 123456789
 np.random.seed(seed)
 device = 'cuda'
@@ -40,25 +44,25 @@ torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
-train_text_path = "./processed_data/train_text/"
-train_time_path = "./processed_data/train_timestamps/"
-train_price_path = "./processed_data/train_price/"
-train_mask_path = "./processed_data/train_mask/"
-train_gt_path = "./processed_data/train_gt/"
+train_text_path = f"${BASE_DIR}/processed_data/train_text/"
+train_time_path = f"${BASE_DIR}/processed_data/train_timestamps/"
+train_price_path = f"${BASE_DIR}/processed_data/train_price/"
+train_mask_path = f"${BASE_DIR}/processed_data/train_mask/"
+train_gt_path = f"${BASE_DIR}/processed_data/train_gt/"
 no_of_tr_samples = len(os.listdir(train_text_path))
 
-val_text_path = "./processed_data/val_text/"
-val_time_path = "./processed_data/val_timestamps/"
-val_price_path = "./processed_data/val_price/"
-val_mask_path = "./processed_data/val_mask/"
-val_gt_path = "./processed_data/val_gt/"
+val_text_path = f"${BASE_DIR}/processed_data/val_text/"
+val_time_path = f"${BASE_DIR}/processed_data/val_timestamps/"
+val_price_path = f"${BASE_DIR}/processed_data/val_price/"
+val_mask_path = f"${BASE_DIR}/processed_data/val_mask/"
+val_gt_path = f"${BASE_DIR}/processed_data/val_gt/"
 no_of_val_samples = len(os.listdir(val_text_path))
 
-test_text_path = "./processed_data/test_text/"
-test_time_path = "./processed_data/test_timestamps/"
-test_price_path = "./processed_data/test_price/"
-test_mask_path = "./processed_data/test_mask/"
-test_gt_path = "./processed_data/test_gt/"
+test_text_path = f"${BASE_DIR}/processed_data/test_text/"
+test_time_path = f"${BASE_DIR}/processed_data/test_timestamps/"
+test_price_path = f"${BASE_DIR}/processed_data/test_price/"
+test_mask_path = f"${BASE_DIR}/processed_data/test_mask/"
+test_gt_path = f"${BASE_DIR}/processed_data/test_gt/"
 no_of_test_samples = len(os.listdir(test_text_path))
 
 def weighted_mse_loss(input, target, weight):
@@ -202,7 +206,7 @@ def test_dict():
         print('\t[INFO] METRICS -- Test performance:', cur_test_perf)
         df = pd.DataFrame(columns=['mrr','irr','sr','ndcg'])
         df = df.append(cur_test_perf,ignore_index=True)
-        df.to_csv('fast_test_results.csv')
+        df.to_csv(f'{BASE_DIR}/fast_test_results.csv')
         del price_batch
         del gt_batch
         del mask_batch
