@@ -52,14 +52,14 @@ train_time_path = f"${BASE_DIR}/processed_data/train_timestamps/"
 train_price_path = f"${BASE_DIR}/processed_data/train_price/"
 train_mask_path = f"${BASE_DIR}/processed_data/train_mask/"
 train_gt_path = f"${BASE_DIR}/processed_data/train_gt/"
-no_of_tr_samples = count_files(train_text_path)
+no_of_train_samples = count_files(train_text_path)
 
 val_text_path = f"${BASE_DIR}/processed_data/val_text/"
 val_time_path = f"${BASE_DIR}/processed_data/val_timestamps/"
 val_price_path = f"${BASE_DIR}/processed_data/val_price/"
 val_mask_path = f"${BASE_DIR}/processed_data/val_mask/"
 val_gt_path = f"${BASE_DIR}/processed_data/val_gt/"
-no_of_val_samples = count_files(val_text_path)
+no_of_validation_samples = count_files(val_text_path)
 
 test_text_path = f"${BASE_DIR}/processed_data/test_text/"
 test_time_path = f"${BASE_DIR}/processed_data/test_timestamps/"
@@ -80,7 +80,13 @@ def loss_rank(pred, base_price, ground_truth, mask, alpha, no_stocks):
     all_ones = torch.ones(no_stocks,1).to(device)
     pre_pw_dif =  (torch.matmul(return_ratio, torch.transpose(all_ones, 0, 1)) - torch.matmul(all_ones, torch.transpose(return_ratio,0,1)))
     gt_pw_dif = (torch.matmul(all_ones, torch.transpose(ground_truth,0,1)) - torch.matmul(ground_truth, torch.transpose(all_ones,0,1)))
-    mask_pw = torch.matmul(mask, torch.transpose(mask,0,1))
+    
+
+    mask_pw_previous_code = torch.matmul(mask, torch.transpose(mask,0,1))
+    mask_pw = mask @ mask.t()
+    assert mask_pw == mask_pw_previous_code
+
+
     rank_loss = torch.mean(F.relu(((pre_pw_dif*gt_pw_dif)*mask_pw)))
     loss = reg_loss + alpha*rank_loss
     del mask_pw, gt_pw_dif, pre_pw_dif, all_ones
@@ -92,7 +98,7 @@ def train(epoch):
     tra_rank_loss = 0.0
     model.train()
     optimizer.zero_grad()
-    for i in range(no_of_tr_samples):
+    for i in range(no_of_train_samples):
       train_text = torch.tensor(np.load(train_text_path+str(i).zfill(10)+'.npy'), dtype=torch.float32).cuda()
       train_timestamps = torch.tensor(np.load(train_time_path+str(i).zfill(10)+'.npy'), dtype=torch.float32).cuda()
       output = model(train_text, train_timestamps, no_stocks)
@@ -110,9 +116,9 @@ def train(epoch):
       tra_reg_loss += cur_reg_loss.detach().cpu().item()
       tra_rank_loss += cur_rank_loss.detach().cpu().item()
       # print('[INFO] METRICS -- Training Loss:',
-            # tra_loss / (no_of_tr_samples),
-            # tra_reg_loss / (no_of_tr_samples),
-            # tra_rank_loss / (no_of_tr_samples))
+            # tra_loss / (no_of_train_samples),
+            # tra_reg_loss / (no_of_train_samples),
+            # tra_rank_loss / (no_of_train_samples))
     del price_batch
     del gt_batch
     del mask_batch 
@@ -120,20 +126,20 @@ def train(epoch):
 def test_dict():
     with torch.no_grad():
         cur_valid_pred = np.zeros(
-            [no_stocks, no_of_val_samples],
+            [no_stocks, no_of_validation_samples],
             dtype=float)
         cur_valid_gt = np.zeros(
-            [no_stocks, no_of_val_samples],
+            [no_stocks, no_of_validation_samples],
             dtype=float)
         cur_valid_mask = np.zeros(
-            [no_stocks, no_of_val_samples],
+            [no_stocks, no_of_validation_samples],
             dtype=float)
         val_loss = 0.0
         val_reg_loss = 0.0
         val_rank_loss = 0.0
         
         model.eval()
-        for i in range(no_of_val_samples):
+        for i in range(no_of_validation_samples):
             val_text = torch.tensor(np.load(val_text_path+str(i).zfill(10)+'.npy'), dtype=torch.float32).cuda()
             val_timestamps = torch.tensor(np.load(val_time_path+str(i).zfill(10)+'.npy'), dtype=torch.float32).cuda()
             output_val = model(val_text, val_timestamps, no_stocks)
@@ -157,9 +163,9 @@ def test_dict():
                 copy.copy(mask_batch[:, 0])
 
         # print('[INFO] METRICS -- Validation MSE:',
-        #     val_loss / (no_of_val_samples),
-        #     val_reg_loss / (no_of_val_samples),
-        #     val_rank_loss / (no_of_val_samples))
+        #     val_loss / (no_of_validation_samples),
+        #     val_reg_loss / (no_of_validation_samples),
+        #     val_rank_loss / (no_of_validation_samples))
         cur_valid_perf = evaluate(cur_valid_pred, cur_valid_gt, cur_valid_mask)
         # print('\t [INFO] METRICS -- Validation preformance:', cur_valid_perf)
         del price_batch
