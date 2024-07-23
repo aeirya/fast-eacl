@@ -2,7 +2,7 @@ from __future__ import division
 from __future__ import print_function
 
 BASE_DIR = '.'
-DATA_DIR = f'{BASE_DIR}/data'
+DATA_DIR = f'{BASE_DIR}/old_processed_data'
 
 from util import count_files
 
@@ -47,25 +47,25 @@ torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
-train_text_path = f"${BASE_DIR}/processed_data/train_text/"
-train_time_path = f"${BASE_DIR}/processed_data/train_timestamps/"
-train_price_path = f"${BASE_DIR}/processed_data/train_price/"
-train_mask_path = f"${BASE_DIR}/processed_data/train_mask/"
-train_gt_path = f"${BASE_DIR}/processed_data/train_gt/"
+train_text_path = f"${DATA_DIR}/train_text/"
+train_time_path = f"${DATA_DIR}/train_timestamps/"
+train_price_path = f"${DATA_DIR}/train_price/"
+train_mask_path = f"${DATA_DIR}/train_mask/"
+train_gt_path = f"${DATA_DIR}/train_gt/"
 no_of_train_samples = count_files(train_text_path)
 
-val_text_path = f"${BASE_DIR}/processed_data/val_text/"
-val_time_path = f"${BASE_DIR}/processed_data/val_timestamps/"
-val_price_path = f"${BASE_DIR}/processed_data/val_price/"
-val_mask_path = f"${BASE_DIR}/processed_data/val_mask/"
-val_gt_path = f"${BASE_DIR}/processed_data/val_gt/"
+val_text_path = f"${DATA_DIR}/val_text/"
+val_time_path = f"${DATA_DIR}/val_timestamps/"
+val_price_path = f"${DATA_DIR}/val_price/"
+val_mask_path = f"${DATA_DIR}/val_mask/"
+val_gt_path = f"${DATA_DIR}/val_gt/"
 no_of_validation_samples = count_files(val_text_path)
 
-test_text_path = f"${BASE_DIR}/processed_data/test_text/"
-test_time_path = f"${BASE_DIR}/processed_data/test_timestamps/"
-test_price_path = f"${BASE_DIR}/processed_data/test_price/"
-test_mask_path = f"${BASE_DIR}/processed_data/test_mask/"
-test_gt_path = f"${BASE_DIR}/processed_data/test_gt/"
+test_text_path = f"${DATA_DIR}/test_text/"
+test_time_path = f"${DATA_DIR}/test_timestamps/"
+test_price_path = f"${DATA_DIR}/test_price/"
+test_mask_path = f"${DATA_DIR}/test_mask/"
+test_gt_path = f"${DATA_DIR}/test_gt/"
 no_of_test_samples = count_files(test_text_path)
 
 no_stocks = count_files(f'{DATA_DIR}/raw/tweet')
