@@ -69,8 +69,10 @@ class Attention(torch.nn.Module):
             return torch.mean(full, dim=dim)
 
 class FAST(nn.Module):
-    def __init__(self):
+    def __init__(self, no_stocks):
         super(FAST, self).__init__()
+        self.no_stocks = no_stocks
+
         self.text_lstm = [nn.LSTM(768,64) for _ in range(no_stocks)]
         for i,textlstm in enumerate(self.text_lstm):
             self.add_module('textlstm{}'.format(i), textlstm)
@@ -87,7 +89,9 @@ class FAST(nn.Module):
         for i,dayattention in enumerate(self.day_attention):
             self.add_module('dayattention{}'.format(i), dayattention)
         self.linear_stock = nn.Linear(64,1)
-    def forward(self, text_input, time_inputs, no_stocks):
+
+    def forward(self, text_input, time_inputs):
+        no_stocks = self.no_stocks
         list_1 = []
         op_size = 64
         for i in range(text_input.size(0)):

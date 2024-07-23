@@ -101,7 +101,7 @@ def train(epoch):
     for i in range(no_of_train_samples):
       train_text = torch.tensor(np.load(train_text_path+str(i).zfill(10)+'.npy'), dtype=torch.float32).cuda()
       train_timestamps = torch.tensor(np.load(train_time_path+str(i).zfill(10)+'.npy'), dtype=torch.float32).cuda()
-      output = model(train_text, train_timestamps, no_stocks)
+      output = model(train_text, train_timestamps)
       mask_batch = (np.load(train_mask_path+str(i).zfill(10)+'.npy'))#.cuda()
       price_batch = (np.load(train_price_path+str(i).zfill(10)+'.npy'))#.cuda()
       gt_batch = (np.load(train_gt_path+str(i).zfill(10)+'.npy'))#.cuda()
@@ -142,7 +142,7 @@ def test_dict():
         for i in range(no_of_validation_samples):
             val_text = torch.tensor(np.load(val_text_path+str(i).zfill(10)+'.npy'), dtype=torch.float32).cuda()
             val_timestamps = torch.tensor(np.load(val_time_path+str(i).zfill(10)+'.npy'), dtype=torch.float32).cuda()
-            output_val = model(val_text, val_timestamps, no_stocks)
+            output_val = model(val_text, val_timestamps)
             mask_batch = (np.load(val_mask_path+str(i).zfill(10)+'.npy'))#.cuda()
             price_batch = (np.load(val_price_path+str(i).zfill(10)+'.npy'))#.cuda()
             gt_batch = (np.load(val_gt_path+str(i).zfill(10)+'.npy'))#.cuda()
@@ -224,7 +224,7 @@ def test_dict():
         del mask_batch
 
 
-model = FAST().to('cuda')
+model = FAST(no_stocks).to('cuda')
 lr_list = [1e-3, 5e-4, 3e-5]
 for lr in lr_list:
     if args.cuda:
