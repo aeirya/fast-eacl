@@ -2,6 +2,9 @@ from __future__ import division
 from __future__ import print_function
 
 BASE_DIR = '.'
+DATA_DIR = f'{BASE_DIR}/data'
+
+from util import count_files
 
 import os
 import copy
@@ -49,21 +52,24 @@ train_time_path = f"${BASE_DIR}/processed_data/train_timestamps/"
 train_price_path = f"${BASE_DIR}/processed_data/train_price/"
 train_mask_path = f"${BASE_DIR}/processed_data/train_mask/"
 train_gt_path = f"${BASE_DIR}/processed_data/train_gt/"
-no_of_tr_samples = len(os.listdir(train_text_path))
+no_of_tr_samples = count_files(train_text_path)
 
 val_text_path = f"${BASE_DIR}/processed_data/val_text/"
 val_time_path = f"${BASE_DIR}/processed_data/val_timestamps/"
 val_price_path = f"${BASE_DIR}/processed_data/val_price/"
 val_mask_path = f"${BASE_DIR}/processed_data/val_mask/"
 val_gt_path = f"${BASE_DIR}/processed_data/val_gt/"
-no_of_val_samples = len(os.listdir(val_text_path))
+no_of_val_samples = count_files(val_text_path)
 
 test_text_path = f"${BASE_DIR}/processed_data/test_text/"
 test_time_path = f"${BASE_DIR}/processed_data/test_timestamps/"
 test_price_path = f"${BASE_DIR}/processed_data/test_price/"
 test_mask_path = f"${BASE_DIR}/processed_data/test_mask/"
 test_gt_path = f"${BASE_DIR}/processed_data/test_gt/"
-no_of_test_samples = len(os.listdir(test_text_path))
+no_of_test_samples = count_files(test_text_path)
+
+no_stocks = count_files(f'{DATA_DIR}/raw/tweet')
+
 
 def weighted_mse_loss(input, target, weight):
     return torch.mean(weight * (input - target) ** 2)
@@ -211,12 +217,13 @@ def test_dict():
         del gt_batch
         del mask_batch
 
+
 model = FAST().to('cuda')
 lr_list = [1e-3, 5e-4, 3e-5]
 for lr in lr_list:
     if args.cuda:
         model.cuda()
-    optimizer = optim.Adam(model.parameters(), lr=l_r, weight_decay=args.weight_decay)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=args.weight_decay)
     for epoch in tqdm(range(args.epochs)):
         train(epoch)
     results = test_dict()
