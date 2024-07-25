@@ -1,5 +1,5 @@
-device = 'mps'
-# device = 'cuda'
+# device = 'mps'
+device = 'cuda'
 
 import os
 from datetime import datetime
@@ -35,8 +35,6 @@ val_start_date, val_end_date = map(datetime.strptime, val_date_range, ['%Y-%m-%d
 
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 model = BertModel.from_pretrained('bert-base-uncased')
-
-
 model.to(device)
 
 def get_destination_dir(base_dir, folder_name):
@@ -78,9 +76,11 @@ def day_filepath_streamer(folder_name):
     train_dir = get_destination_dir(base_train_dir, folder_name)
     test_dir = get_destination_dir(base_test_dir, folder_name)
     val_dir = get_destination_dir(base_val_dir, folder_name)
+    
     os.makedirs(train_dir, exist_ok=True)
     os.makedirs(test_dir, exist_ok=True)
     os.makedirs(val_dir, exist_ok=True)
+    
     print(f"Processing directory: {folder_name}")
     for year in range(2014, 2018):
         for month in range(1, 13):
@@ -104,38 +104,107 @@ def day_filepath_streamer(folder_name):
                     yield file_path, dest_dir, date_str
 
                 except:
-                    print('error in listing files')
+                    # print(f'error in listing files. date: {date_str}')
+                    pass
 
 def read_day_file(file_path):
-    tweet_texts = []
+    tweets = []
     try:
         with open(file_path, 'r') as file:
             for line in file:
                 tweet_data = json.loads(line)
+                
                 # the tweet_data's text is an array of word stems(?)
                 tweet_text = ' '.join(tweet_data['text'])
+                
+                # tweets date
+                create_date = tweet_data['created_at']
+                time = create_date.split()[3]
+                time_format = "%H:%M:%S"
+                # time of day in minutes
+                time = datetime.strptime(time, time_format)
 
-                tweet_texts.append(tweet_text)
+                tweets.append({
+                    'text': tweet_text,
+                    'time': time
+                })
     except:
         print("error in reading files")
+        raise
     
-    return tweet_texts
+    tweets = sorted(tweets, key=lambda x: x["time"])
+                    
+    return tweets
 
 
 def process_directory(folder_name):
     for file_path, dest_dir, date_str in day_filepath_streamer(folder_name):
         try:
-            tweet_texts = read_day_file(file_path)
-            print("num of tweets: ", len(tweet_texts))
-            # embeddings = encode_tweet(tweet_texts)
-            embeddings = []
+            tweets = read_day_file(file_path)
+            # encode text
+            tweet_texts = [t['text'] for t in tweets]
+            embeddings = encode_tweet(tweet_texts)
             embeddings_path = os.path.join(dest_dir, f"{date_str}_embeddings.npy")
             np.save(embeddings_path, np.array(embeddings))
             print(f"Saved embeddings to {embeddings_path}")
 
+            # create timestamp data
+            timestamps = [1.0]
+            for t1, t2 in zip(tweets[:-1], tweets[1:]):
+                deltaT = (t2['time'] - t1['time']).total_seconds()/60
+                timestamps.append(deltaT)
+
         except:
             print("error in encoding file")
+            raise
             continue
+
+
+def process_directory_batched(folder_name):
+    # aggregated tweets
+    all_tweets = []
+
+    # saved info for each file
+    stack = []
+
+    file_idx = 0
+    for file_path, dest_dir, date_str in day_filepath_streamer(folder_name):
+        tweet_texts = read_day_file(file_path)
+        all_tweets += tweet_texts
+
+        count = len(tweet_texts)
+        stack.append(
+            (count, dest_dir, date_str)
+        )
+
+        # file_idx += 1
+        # if file_idx > 20:
+        #     break
+
+    # encode all the tweets at the same time
+    embeddings = []
+    step = 20
+    for i in range(0, len(all_tweets), step):
+        embeddings.append(encode_tweet(all_tweets[i:i+step]))
+    embeddings = np.vstack(embeddings)
+
+
+    # encoded tweets based on day
+    # days = {}
+
+    i = 0
+    for tweet_count, dest_dir, date_str in stack:
+        e = embeddings[i:i+tweet_count]
+        i += tweet_count
+
+        embeddings_path = os.path.join(dest_dir, f"{date_str}_embeddings.npy")
+        np.save(embeddings_path, np.array(e))
+        print(f"Saved embeddings to {embeddings_path}")
+
+    del embeddings
+
+
+
 
 
 for folder_name in source_dirs:
