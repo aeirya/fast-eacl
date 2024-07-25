@@ -1,3 +1,6 @@
+device = 'mps'
+# device = 'cuda'
+
 import os
 from datetime import datetime
 import json
@@ -33,8 +36,7 @@ val_start_date, val_end_date = map(datetime.strptime, val_date_range, ['%Y-%m-%d
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 model = BertModel.from_pretrained('bert-base-uncased')
 
-# device = 'mps'
-device = 'cuda'
+
 model.to(device)
 
 def get_destination_dir(base_dir, folder_name):
@@ -47,7 +49,11 @@ def preprocess_tweet(text):
     return text
 
 def encode_tweet(text):
-    text = preprocess_tweet(text)
+    if isinstance(text, list):
+        text = [preprocess_tweet(t) for t in text]
+    else:
+        text = preprocess_tweet(text)
+
     inputs = tokenizer(text, return_tensors='pt', truncation=True, padding=True)
     
     # pass input to gpu
@@ -64,7 +70,11 @@ def encode_tweet(text):
         del inputs, outputs, token_embeddings, attention_mask
         return embeddings.squeeze().cpu().numpy()
 
-def process_directory(folder_name):
+
+def day_filepath_streamer(folder_name):
+    # input: stock directory consisting of day files
+    # output: input file name, output dir name, date str
+
     train_dir = get_destination_dir(base_train_dir, folder_name)
     test_dir = get_destination_dir(base_test_dir, folder_name)
     val_dir = get_destination_dir(base_val_dir, folder_name)
@@ -90,22 +100,43 @@ def process_directory(folder_name):
                     file_path = os.path.join(tweets_base_dir, folder_name, date_str)
                     if not os.path.isfile(file_path):
                         continue
-                    
-                    embeddings = []
-                    with open(file_path, 'r') as file:
-                        for line in file:
-                            tweet_data = json.loads(line)
-                            # the tweet_data's text is an array of word stems(?)
-                            tweet_text = ' '.join(tweet_data['text'])
-                            embedding = encode_tweet(tweet_text)
-                            embeddings.append(embedding)
-                    
-                    embeddings_path = os.path.join(dest_dir, f"{date_str}_embeddings.npy")
-                    np.save(embeddings_path, np.array(embeddings))
-                    print(f"Saved embeddings to {embeddings_path}")
+                
+                    yield file_path, dest_dir, date_str
 
-                except ValueError:
-                    continue
+                except:
+                    print('error in listing files')
+
+def read_day_file(file_path):
+    tweet_texts = []
+    try:
+        with open(file_path, 'r') as file:
+            for line in file:
+                tweet_data = json.loads(line)
+                # the tweet_data's text is an array of word stems(?)
+                tweet_text = ' '.join(tweet_data['text'])
+
+                tweet_texts.append(tweet_text)
+    except:
+        print("error in reading files")
+    
+    return tweet_texts
+
+
+def process_directory(folder_name):
+    for file_path, dest_dir, date_str in day_filepath_streamer(folder_name):
+        try:
+            tweet_texts = read_day_file(file_path)
+            print("num of tweets: ", len(tweet_texts))
+            # embeddings = encode_tweet(tweet_texts)
+            embeddings = []
+            embeddings_path = os.path.join(dest_dir, f"{date_str}_embeddings.npy")
+            np.save(embeddings_path, np.array(embeddings))
+            print(f"Saved embeddings to {embeddings_path}")
+
+        except:
+            print("error in encoding file")
+            continue
+
 
 for folder_name in source_dirs:
     process_directory(folder_name)
