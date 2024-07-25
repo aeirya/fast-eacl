@@ -4,53 +4,88 @@ from torch import nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
+import torch
+import torch.nn as nn
+
 class TimeLSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, cuda_flag=False, bidirectional=False):
+    def __init__(self, input_size, hidden_size, cuda_flag=False, bidirectional=False, device='cpu'):
         super(TimeLSTM, self).__init__()
-        self.hidden_size = hidden_size
-        self.input_size = input_size
-        self.cuda_flag = cuda_flag
-        self.W_all = nn.Linear(hidden_size, hidden_size * 4)
-        self.U_all = nn.Linear(input_size, hidden_size * 4)
-        self.W_d = nn.Linear(hidden_size, hidden_size)
-        self.bidirectional = bidirectional
-    def forward(self, inputs, timestamps, reverse=False):
-        b, seq, embed = inputs.size()
-        h = torch.zeros(b, self.hidden_size, requires_grad=False)
-        c = torch.zeros(b, self.hidden_size, requires_grad=False)
+        self.hidden_size = hidden_size  # Size of the hidden state
+        self.input_size = input_size    # Size of the input features
         
-        if self.cuda_flag:
-            h = h.cuda()
-            c = c.cuda()
+        self.cuda_flag = cuda_flag      # Flag to indicate if CUDA (GPU) is used
+        self.device = device            # Device to use ('cpu' or 'cuda')
+        
+        self.W_all = nn.Linear(hidden_size, hidden_size * 4)  # Linear layer for hidden state transformation
+        self.U_all = nn.Linear(input_size, hidden_size * 4)   # Linear layer for input transformation
+        self.W_d = nn.Linear(hidden_size, hidden_size)        # Linear layer for discounting short-term memory
+        
+        self.bidirectional = bidirectional  # Flag to indicate if the LSTM is bidirectional (not used in this implementation)
 
-        outputs = []
+    def forward(self, input_sequence, timestamps, reverse=False):
+        batch_size, seq, embedding = input_sequence.size()  # Get the batch size, sequence length, and input embedding size
 
-        hidden_state_h = []
-        hidden_state_c = []
-        for s in range(seq):
-            c_s1 = torch.tanh(self.W_d(c))  # short term mem
-            c_s2 = c_s1 * timestamps[:, s: s + 1].expand_as(c_s1)  # discounted short term mem
-            c_l = c - c_s1  # long term mem
-            c_adj = c_l + c_s2  # adjusted = long + disc short term mem
-            outs = self.W_all(h) + self.U_all(inputs[:, s])
-            f, i, o, c_tmp = torch.chunk(outs, 4, 1)
-            f = torch.sigmoid(f)
-            i = torch.sigmoid(i)
-            o = torch.sigmoid(o)
-            c_tmp = torch.sigmoid(c_tmp)
-            c = f * c_adj + i * c_tmp
-            h = o * torch.tanh(c)
-            outputs.append(o)
-            hidden_state_c.append(c)
-            hidden_state_h.append(h)
+        # Initialize hidden and cell states
+        hidden_state_t = torch.zeros(batch_size, self.hidden_size, requires_grad=False)
+        cell_state_t = torch.zeros(batch_size, self.hidden_size, requires_grad=False)
+        
+        # # Move states to the appropriate device
+        # if self.cuda_flag:
+        #     hidden_state_t = hidden_state_t.cuda()
+        #     cell_state_t = cell_state_t.cuda()
+        # else:
+        #     hidden_state_t = hidden_state_t.to(self.device)
+        #     cell_state_t = cell_state_t.to(self.device)
+
+        hidden_state_t = hidden_state_t.to(self.device)
+        cell_state_t = cell_state_t.to(self.device)
+
+        outputs = []  # List to store the output at each time step (output sequence)
+        all_hidden_states = []  # List to store hidden states
+        all_cell_states = []  # List to store cell states (hidden_state_c)
+
+        for s in range(seq):  # Loop over each time step in the sequence
+            c_s1 = torch.tanh(self.W_d(cell_state_t))  # Compute short-term memory component
+            c_s2 = c_s1 * timestamps[:, s: s + 1].expand_as(c_s1)  # Discount short-term memory using timestamps
+            c_l = cell_state_t - c_s1  # Compute long-term memory component
+            c_adj = c_l + c_s2  # Adjusted cell state combining long-term and discounted short-term memory
+            
+            # Compute the output of the gates and candidate cell state
+            gate_inputs = self.W_all(hidden_state_t) + self.U_all(input_sequence[:, s])
+            forget_gate, input_gate, out_gate, c_candidate = torch.chunk(gate_inputs, 4, 1)
+            forget_gate = torch.sigmoid(forget_gate)  # Forget gate
+            input_gate = torch.sigmoid(input_gate)  # Input gate
+            out_gate = torch.sigmoid(out_gate)  # Output gate
+            c_candidate = torch.sigmoid(c_candidate)  # Candidate cell state (c_tmp)
+
+            # Update the cell state and hidden state
+            cell_state_t = forget_gate * c_adj + input_gate * c_candidate
+            hidden_state_t = out_gate * torch.tanh(cell_state_t)
+
+            outputs.append(out_gate)  # Store the output of the current time step
+            all_cell_states.append(cell_state_t)  # Store the cell state of the current time step
+            all_hidden_states.append(hidden_state_t)  # Store the hidden state of the current time step
+        
         if reverse:
             outputs.reverse()
-            hidden_state_c.reverse()
-            hidden_state_h.reverse()
+            all_cell_states.reverse()
+            all_hidden_states.reverse()
+        
+        # Stack the outputs and hidden/cell states to form tensors
         outputs = torch.stack(outputs, 1)
-        hidden_state_c = torch.stack(hidden_state_c, 1)
-        hidden_state_h = torch.stack(hidden_state_h, 1)
-        return outputs, (h, c)
+        all_cell_states = torch.stack(all_cell_states, 1)
+        all_hidden_states = torch.stack(all_hidden_states, 1)
+
+        return outputs, (hidden_state_t, cell_state_t)  # Return the outputs and the final hidden/cell states
+
+
+    def to(self, device):
+        self.device = device
+        self.cuda_flag = device == 'cuda'
+        
+        super(TimeLSTM, self).to(device)
+        return self
+    
 
 class Attention(torch.nn.Module):
     def __init__(self, in_shape, use_attention=True, maxlen=None):
@@ -72,49 +107,87 @@ class Attention(torch.nn.Module):
         else:
             return torch.mean(full, dim=dim)
 
+
 class FAST(nn.Module):
-    def __init__(self, no_stocks):
+    def __init__(self, num_stocks):
         super(FAST, self).__init__()
-        self.no_stocks = no_stocks
+        self.num_stocks = num_stocks  # Number of stocks
 
-        self.text_lstm = [nn.LSTM(768,64) for _ in range(no_stocks)]
-        for i,textlstm in enumerate(self.text_lstm):
-            self.add_module('textlstm{}'.format(i), textlstm)
-        self.time_lstm = [TimeLSTM(768,64) for _ in range(no_stocks)]
-        for i,timelstm in enumerate(self.time_lstm):
-            self.add_module('timelstm{}'.format(i), timelstm)
-        self.day_lstm = [nn.LSTM(64,64) for _ in range(no_stocks)]
-        for i,daylstm in enumerate(self.day_lstm):
-            self.add_module('daylstm{}'.format(i), daylstm)
-        self.text_attention = [Attention(64,10) for _ in range(no_stocks)]
-        for i,textattention in enumerate(self.text_attention):
-            self.add_module('textattention{}'.format(i), textattention)
-        self.day_attention = [Attention(64,5) for _ in range(no_stocks)]
-        for i,dayattention in enumerate(self.day_attention):
-            self.add_module('dayattention{}'.format(i), dayattention)
-        self.linear_stock = nn.Linear(64,1)
+        # Initialize LSTM layers for text processing for each stock
+        self.text_lstm_layers = [nn.LSTM(768, 64) for _ in range(num_stocks)]
+        for i, text_lstm in enumerate(self.text_lstm_layers):
+            self.add_module(f'text_lstm_{i}', text_lstm)
 
-    def forward(self, text_input, time_inputs):
-        no_stocks = self.no_stocks
-        list_1 = []
-        op_size = 64
-        for i in range(text_input.size(0)):
-            list_2 = []
-            len_lookback_window = text_input.size(1)
-            num_text = text_input.size(2)
-            embb_dims = text_input.size(3)
-            for j in range(len_lookback_window):
-                y, (temp,_) = self.time_lstm[i](
-                    text_input[i,j,:,:].reshape(1,num_text,embb_dims),
-                    time_inputs[i,j,:].reshape(1,num_text))
-                y = self.text_attention[i](y, temp, num_text)
-                list_2.append(y)
-            text_vectors = torch.Tensor((1,len_lookback_window,op_size))
-            text_vectors = torch.cat(list_2)
-            text, (temp2,_) = self.day_lstm[i](text_vectors.reshape(1,len_lookback_window,op_size))            
-            text = self.text_attention[i](text, temp2, len_lookback_window)
-            list_1.append(text.reshape(1,op_size))
-        ft_vec = torch.Tensor((no_stocks,op_size))
-        ft_vec = torch.cat(list_1)
-        op = F.leaky_relu(self.linear_stock(ft_vec))
-        return op
+        # Initialize TimeLSTM layers for each stock
+        self.time_lstm_layers = [TimeLSTM(768, 64) for _ in range(num_stocks)]
+        for i, time_lstm in enumerate(self.time_lstm_layers):
+            self.add_module(f'time_lstm_{i}', time_lstm)
+
+        # Initialize LSTM layers for day processing for each stock
+        self.day_lstm_layers = [nn.LSTM(64, 64) for _ in range(num_stocks)]
+        for i, day_lstm in enumerate(self.day_lstm_layers):
+            self.add_module(f'day_lstm_{i}', day_lstm)
+
+        # Initialize Attention layers for text processing for each stock
+        self.text_attention_layers = [Attention(64, 10) for _ in range(num_stocks)]
+        for i, text_attention in enumerate(self.text_attention_layers):
+            self.add_module(f'text_attention_{i}', text_attention)
+
+        # Initialize Attention layers for day processing for each stock
+        self.day_attention_layers = [Attention(64, 5) for _ in range(num_stocks)]
+        for i, day_attention in enumerate(self.day_attention_layers):
+            self.add_module(f'day_attention_{i}', day_attention)
+
+        # Linear layer for stock prediction
+        self.stock_prediction_layer = nn.Linear(64, 1)
+
+
+    def forward(self, text_inputs, time_inputs):
+        num_stocks = self.num_stocks
+        stock_outputs = []  # List to store outputs for each stock
+        lstm_output_size = 64  # Output size of the LSTM layers
+
+        # Process each stock individually
+        for stock_idx in range(text_inputs.size(0)):
+            day_outputs = []  # List to store daily outputs for the current stock
+            lookback_window_length = text_inputs.size(1)
+            num_text_inputs = text_inputs.size(2)
+            embedding_dim = text_inputs.size(3)
+
+            # Process each day in the lookback window
+            for day_idx in range(lookback_window_length):
+                text_input_reshaped = text_inputs[stock_idx, day_idx, :, :].reshape(1, num_text_inputs, embedding_dim)
+                time_input_reshaped = time_inputs[stock_idx, day_idx, :].reshape(1, num_text_inputs)
+
+                # Pass through TimeLSTM
+                lstm_output, (hidden_state, _) = self.time_lstm_layers[stock_idx](text_input_reshaped, time_input_reshaped)
+                # Apply attention on the LSTM output
+                attention_output = self.text_attention_layers[stock_idx](lstm_output, hidden_state, num_text_inputs)
+                
+                day_outputs.append(attention_output)
+
+            # Combine daily outputs and process through day LSTM
+            day_outputs_tensor = torch.cat(day_outputs).reshape(1, lookback_window_length, lstm_output_size)
+            day_lstm_output, (hidden_state_day, _) = self.day_lstm_layers[stock_idx](day_outputs_tensor)
+            # Apply attention on the day LSTM output
+            final_attention_output = self.day_attention_layers[stock_idx](day_lstm_output, hidden_state_day, lookback_window_length)
+            stock_outputs.append(final_attention_output.reshape(1, lstm_output_size))
+
+
+        # Combine outputs for all stocks and pass through final linear layer
+        final_output_tensor = torch.cat(stock_outputs)
+        final_output = F.leaky_relu(self.stock_prediction_layer(final_output_tensor))
+
+        print("final_output.shape: ", final_output.shape)
+        print("final_output: ", final_output)
+        # quit(0)
+
+        return final_output
+    
+    def to(self, device):
+        
+        for item in self.time_lstm_layers:
+            item.to(device)
+        
+        super(FAST, self).to(device)
+        return self

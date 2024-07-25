@@ -7,8 +7,8 @@ BASE_DIR = '.'
 DATA_DIR = f'{BASE_DIR}/old_processed_data'
 
 MODEL_CHECKPOINT_PATH='checkpoint_model.pt'
-device = 'cpu'
-# device = 'mps'
+# device = 'cpu'
+device = 'mps'
 
 from util import count_files
 
