@@ -87,50 +87,69 @@ class TimeLSTM(nn.Module):
         return self
     
 
+
 class Attention(torch.nn.Module):
     def __init__(self, in_shape, use_attention=True, maxlen=None):
         super(Attention, self).__init__()
         self.use_attention = use_attention
+        
+        # Initialize attention mechanism layers if use_attention is True
         if self.use_attention:
             self.W1 = torch.nn.Linear(in_shape, in_shape)
             self.W2 = torch.nn.Linear(in_shape, in_shape)
             self.V = torch.nn.Linear(in_shape, 1)
-        if maxlen != None:
+        
+        # Create a range tensor if maxlen is specified
+        if maxlen is not None:
             self.arange = torch.arange(maxlen)
+    
     def forward(self, full, last, lens=None, dim=1):
+        # •	full: The full sequence of hidden states (e.g., from an LSTM).
+        # •	last: The last hidden state.
+        # •	lens: Lengths of sequences (optional, not used in this implementation).
+        # •	dim: The dimension along which the attention weights are computed and applied.
+        
         if self.use_attention:
+            # Compute attention scores
             score = self.V(torch.tanh(self.W1(last) + self.W2(full)))
+            
+            # Apply softmax to get attention weights
             attention_weights = F.softmax(score, dim=dim)
+            
+            # Compute the context vector as a weighted sum of the full sequence
             context_vector = attention_weights * full
             context_vector = torch.sum(context_vector, dim=dim)
+            
             return context_vector
         else:
+            # Return the mean of the full sequence if attention is not used
             return torch.mean(full, dim=dim)
-
+        
 
 class FAST(nn.Module):
     def __init__(self, num_stocks):
         super(FAST, self).__init__()
         self.num_stocks = num_stocks  # Number of stocks
 
-        # Initialize LSTM layers for text processing for each stock
-        self.text_lstm_layers = [nn.LSTM(768, 64) for _ in range(num_stocks)]
-        for i, text_lstm in enumerate(self.text_lstm_layers):
-            self.add_module(f'text_lstm_{i}', text_lstm)
+        # NOTE: TEXT LSTM IS AN ALTERNATIVE TO TWEET LSTM
+        # # Initialize LSTM layers for text processing for each stock
+        # self.text_lstm_layers = [nn.LSTM(768, 64) for _ in range(num_stocks)]
+        # for i, text_lstm in enumerate(self.text_lstm_layers):
+        #     self.add_module(f'text_lstm_{i}', text_lstm)
 
-        # Initialize TimeLSTM layers for each stock
-        self.time_lstm_layers = [TimeLSTM(768, 64) for _ in range(num_stocks)]
-        for i, time_lstm in enumerate(self.time_lstm_layers):
+        # Initialize TimeLSTM layers for each stock (INTRADAY)
+        self.tweet_lstm_layers = [TimeLSTM(768, 64) for _ in range(num_stocks)]
+        for i, time_lstm in enumerate(self.tweet_lstm_layers):
             self.add_module(f'time_lstm_{i}', time_lstm)
 
-        # Initialize LSTM layers for day processing for each stock
+        # Initialize LSTM layers for day processing for each stock (INTERDAY)
         self.day_lstm_layers = [nn.LSTM(64, 64) for _ in range(num_stocks)]
         for i, day_lstm in enumerate(self.day_lstm_layers):
             self.add_module(f'day_lstm_{i}', day_lstm)
 
         # Initialize Attention layers for text processing for each stock
-        self.text_attention_layers = [Attention(64, 10) for _ in range(num_stocks)]
-        for i, text_attention in enumerate(self.text_attention_layers):
+        self.tweet_attention_layers = [Attention(64, 10) for _ in range(num_stocks)]
+        for i, text_attention in enumerate(self.tweet_attention_layers):
             self.add_module(f'text_attention_{i}', text_attention)
 
         # Initialize Attention layers for day processing for each stock
@@ -143,26 +162,44 @@ class FAST(nn.Module):
 
 
     def forward(self, text_inputs, time_inputs):
-        num_stocks = self.num_stocks
+        '''
+        text_inputs shape: (stocks, loopback days window, daily tweets, text embedding) 
+        '''
+        
+        num_stocks = text_inputs.size(0)
+        lookback_window_length = text_inputs.size(1)
+        num_text_inputs = text_inputs.size(2)
+        embedding_dim = text_inputs.size(3)
+        
         stock_outputs = []  # List to store outputs for each stock
         lstm_output_size = 64  # Output size of the LSTM layers
 
+        # print('printing input shape')
+        # print(text_inputs.shape)
+
         # Process each stock individually
-        for stock_idx in range(text_inputs.size(0)):
+        for stock_idx in range(num_stocks):
             day_outputs = []  # List to store daily outputs for the current stock
-            lookback_window_length = text_inputs.size(1)
-            num_text_inputs = text_inputs.size(2)
-            embedding_dim = text_inputs.size(3)
+
+            tweet_lstm = self.tweet_lstm_layers[stock_idx]
+            tweet_attention = self.tweet_attention_layers[stock_idx]
+
+            # print("time inputs shape: ", time_inputs.shape)
 
             # Process each day in the lookback window
             for day_idx in range(lookback_window_length):
                 text_input_reshaped = text_inputs[stock_idx, day_idx, :, :].reshape(1, num_text_inputs, embedding_dim)
                 time_input_reshaped = time_inputs[stock_idx, day_idx, :].reshape(1, num_text_inputs)
 
+
+
+                # print("time input reshaped", time_input_reshaped.shape)
+                # quit(0)
+
                 # Pass through TimeLSTM
-                lstm_output, (hidden_state, _) = self.time_lstm_layers[stock_idx](text_input_reshaped, time_input_reshaped)
+                lstm_output, (hidden_state, _) = tweet_lstm(text_input_reshaped, time_input_reshaped)
                 # Apply attention on the LSTM output
-                attention_output = self.text_attention_layers[stock_idx](lstm_output, hidden_state, num_text_inputs)
+                attention_output = tweet_attention(lstm_output, hidden_state, num_text_inputs)
                 
                 day_outputs.append(attention_output)
 
@@ -176,18 +213,22 @@ class FAST(nn.Module):
 
         # Combine outputs for all stocks and pass through final linear layer
         final_output_tensor = torch.cat(stock_outputs)
+
+        # dim = no_stocks x lstm_output_size
+        # return final_output_tensor
+    
+
         final_output = F.leaky_relu(self.stock_prediction_layer(final_output_tensor))
 
-        print("final_output.shape: ", final_output.shape)
-        print("final_output: ", final_output)
-        # quit(0)
-
         return final_output
+
     
     def to(self, device):
         
-        for item in self.time_lstm_layers:
+        for item in self.tweet_lstm_layers:
             item.to(device)
         
         super(FAST, self).to(device)
         return self
+
+
