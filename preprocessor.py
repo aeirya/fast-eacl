@@ -1,5 +1,5 @@
-# device = 'mps'
 device = 'cuda'
+# device = 'mps'
 
 import os
 from datetime import datetime
@@ -23,7 +23,7 @@ source_dirs = [
     'PEP', 'PFE', 'PG', 'PICO', 'PM', 'PPL', 'PTR', 'RDS-B', 'REX', 'SLB', 'SNP', 'SNY', 'SO', 'SPLP', 'SRE', 
     'T', 'TM', 'TOT', 'TSM', 'UL', 'UN', 'UNH', 'UPS', 'UTX', 'V', 'VZ', 'WFC', 'WMT', 'XOM'
 ]
-base_train_dir = r"C:\Users\AMIR\Desktop\Training"
+base_train_dir = r"Training"
 base_test_dir = r"C:\Users\AMIR\Desktop\Test"
 base_val_dir = r"C:\Users\AMIR\Desktop\Validation"
 train_date_range = ('2014-01-01', '2015-07-31')
@@ -78,6 +78,9 @@ def day_filepath_streamer(folder_name):
     val_dir = get_destination_dir(base_val_dir, folder_name)
     
     os.makedirs(train_dir, exist_ok=True)
+    os.makedirs(os.path.join(train_dir, 'text'), exist_ok=True)
+    os.makedirs(os.path.join(train_dir, 'time'), exist_ok=True)
+
     os.makedirs(test_dir, exist_ok=True)
     os.makedirs(val_dir, exist_ok=True)
     
@@ -119,8 +122,9 @@ def read_day_file(file_path):
                 
                 # tweets date
                 create_date = tweet_data['created_at']
-                time = create_date.split()[3]
-                time_format = "%H:%M:%S"
+                time = create_date
+                time_format = "%a %b %d %H:%M:%S %z %Y"
+                        
                 # time of day in minutes
                 time = datetime.strptime(time, time_format)
 
@@ -137,22 +141,41 @@ def read_day_file(file_path):
     return tweets
 
 
+def save_tweet_texts(tweets, dest_dir, date_str):
+     # encode text
+    tweet_texts = [t['text'] for t in tweets]
+    embeddings = encode_tweet(tweet_texts)
+    embeddings_path = os.path.join(dest_dir, "text", f"{date_str}_embeddings.npy")
+    np.save(embeddings_path, np.array(embeddings))
+    print(f"Saved embeddings to {embeddings_path}")
+
+def save_timestamps(tweets, dest_dir, date_str):
+    # create timestamp data
+    deltats = [1.0]
+    for t1, t2 in zip(tweets[:-1], tweets[1:]):
+        delta_t = (t2['time'] - t1['time']).total_seconds()/60
+        deltats.append(delta_t)
+
+    g = [1.0]
+    for dt in deltats:
+        try:
+            g.append(1 / dt)
+        except ZeroDivisionError:
+            g.append(1)
+
+    # Save inverse_timestamps(its) to a new file
+    its_path = os.path.join(dest_dir, "time", f"{date_str}_its.npy")
+    np.save(its_path, np.array(g))
+    print(f"Saved its to {its_path}")
+
+
 def process_directory(folder_name):
     for file_path, dest_dir, date_str in day_filepath_streamer(folder_name):
         try:
             tweets = read_day_file(file_path)
-            # encode text
-            tweet_texts = [t['text'] for t in tweets]
-            embeddings = encode_tweet(tweet_texts)
-            embeddings_path = os.path.join(dest_dir, f"{date_str}_embeddings.npy")
-            np.save(embeddings_path, np.array(embeddings))
-            print(f"Saved embeddings to {embeddings_path}")
-
-            # create timestamp data
-            timestamps = [1.0]
-            for t1, t2 in zip(tweets[:-1], tweets[1:]):
-                deltaT = (t2['time'] - t1['time']).total_seconds()/60
-                timestamps.append(deltaT)
+           
+            save_tweet_texts(tweets, dest_dir, date_str)
+            save_timestamps(tweets, dest_dir, date_str)
 
         except:
             print("error in encoding file")
@@ -206,8 +229,12 @@ def process_directory_batched(folder_name):
 
 
 
-
+stock_count = 0
 for folder_name in source_dirs:
     process_directory(folder_name)
+    stock_count += 1
+    if stock_count > 2:
+        break
+
 
 print("Processing complete.")
